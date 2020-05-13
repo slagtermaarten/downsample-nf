@@ -1,0 +1,5 @@
+name: nf
+dependencies:
+- python=3.7
+- conda-forge::graphviz=2.40
+- bioconda::nextflow=20
