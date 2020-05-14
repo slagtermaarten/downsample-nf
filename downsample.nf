@@ -54,31 +54,54 @@ ${ summary.collect { k, v -> "  ${k.padRight(12)}: $v"}.join("\n") }
  * ------------------------------------------------------------------------ */
 
 // TODO - limit to bed region
-// TODO - count reads in input - total and unique??
-// TODO - input QC - are there enough reads to meet num_reads
-// TODO - if yes, input to downsample process 
-// TODO - run depthofcoverage too?
 
-process input_bam {
-    /*
-     * TODO - check num reads in input bam and make sure there is enough - input to downsample process
-     */
-    publishDir "${params.outdir}", mode: "copy"
+
+// count total reads in input
+process get_input_read_count {
+    conda "env/downsample.yml"
+
     input:
-        file(input_bam) from input
+    file(input_bam) from input
+
     output:
-        val(true) into input_check_ch
-        file("summary.txt")
+    file("input_bam_read_count.txt") into input_bam_read_count_ch
+
     script:
     """
-    # check num reads in input BAM
-
-    # add to summary text file
-    echo input BAM XXXXX reads > summary.txt
-
-    # check that there are enough reads to match target inputs
+    samtools view -c -F 260 $input_bam > input_bam_read_count.txt
     """
 }
+
+
+// are there enough reads to meet num_reads? - if yes, input to downsample process 
+// TODO? - check inputs are integers
+process input_bam_qc {
+    conda "env/downsample.yml"
+    publishDir "${params.outdir}", mode: "copy"
+
+    input:
+    file(input_count) from input_bam_read_count_ch
+
+    output:
+    val(true) into input_check_ch
+
+    script:
+    """
+    #!/usr/bin/env python
+    # get input read count
+    with open("$input_count") as f:
+        read_count = int(f.readline())
+    
+    # compare to num_reads, exit if requested num is larger than actual number
+    for requested_count in $params.num_reads:
+        if int(requested_count) >= read_count:
+            raise ValueError(f'Requested number of reads ({requested_count}) is greater than the input ({read_count})')
+    """
+}
+
+
+// TODO - run depthofcoverage too?
+// TODO - total reads-duplicates - need to mark duplicates first
 
 
 /* ------------------------------------------------------------------------ *
@@ -125,5 +148,6 @@ process downsample {
 }
 
 // TODO - index BAM??? - can add as flag to picard?
+
 // TODO - check num of reads afterwards to make sure it worked okay??
 // TODO - run depthofcoverage?

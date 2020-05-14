@@ -1,0 +1,5 @@
+name: downsample
+dependencies:
+- python=3.7
+- bioconda::picard=2.20
+- bioconda::samtools=1.9
