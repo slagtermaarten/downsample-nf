@@ -128,26 +128,35 @@ depths_ch
   .set{combined_ch}
 
 
+// TODO - calculate percent to downsample to
+
 // downsample BAM
 process downsample {
-    /*
-     *  Downsample TODO - add actual downsampling script
-     */
-    tag "${depth}_${rep}"
+    conda "env/downsample.yml"
     publishDir "${params.outdir}/downsample/$depth", mode: "copy"
+    tag "${depth}_${rep}"
+
     input:
-        val flag from input_check_ch
-        set depth, rep from combined_ch
+    val flag from input_check_ch
+    set depth, rep from combined_ch
+
     output:
-        file "${depth}_${rep}.bam"
+    file "${depth}_${rep}.bam"
+    file "${depth}_${rep}.bai"
+    file("${depth}_${rep}.downsample_metrics")
+
     script:
     """
-    echo ${depth}_${rep} > ${depth}_${rep}.bam
-    
+    picard DownsampleSam \
+      I=$params.input_bam \
+      O=${depth}_${rep}.bam \
+      P=0.2 \
+      M=${depth}_${rep}.downsample_metrics \
+      RANDOM_SEED=null \
+      CREATE_INDEX=true
     """
 }
 
-// TODO - index BAM??? - can add as flag to picard?
 
 // TODO - check num of reads afterwards to make sure it worked okay??
 // TODO - run depthofcoverage?
