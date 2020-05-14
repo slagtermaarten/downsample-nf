@@ -125,7 +125,7 @@ Channel
 // combine channels
 depths_ch
   .combine(reps_ch)
-  .set{combined_ch}
+  .into{combined_ch; combined_ch_2}
 
 
 // TODO - calculate percent to downsample to
@@ -141,8 +141,8 @@ process downsample {
     set depth, rep from combined_ch
 
     output:
-    file "${depth}_${rep}.bam"
-    file "${depth}_${rep}.bai"
+    file("${depth}_${rep}.bam") into downsampled_bams_ch
+    file("${depth}_${rep}.bai")
     file("${depth}_${rep}.downsample_metrics")
 
     script:
@@ -159,4 +159,25 @@ process downsample {
 
 
 // TODO - check num of reads afterwards to make sure it worked okay??
+//   - this duplcates metrics file from above - not needed?
+process output_qc {
+  conda "env/downsample.yml"
+  publishDir "${params.outdir}/downsample/$depth", mode: "copy"
+  tag "${depth}_${rep}"
+
+  input:
+  file(bam) from downsampled_bams_ch
+  set depth, rep from combined_ch_2
+
+  output:
+  file("${depth}_${rep}.read_count")
+
+  script:
+  """
+  samtools view -c $bam > ${depth}_${rep}.read_count
+  """
+}
+
+
 // TODO - run depthofcoverage?
+// TODO - total reads-duplicates - need to mark duplicates first
