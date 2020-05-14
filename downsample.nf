@@ -32,7 +32,7 @@ if ( !params.num_reads )   { log.error "ERROR: num_reads is required"; exit 1 }
 //}
 
 // load file objects
-input = file("$params.input_bam") // , checkIfExists: true  - TODO add this when using real data
+input = file("$params.input_bam", checkIfExists: true)
 
 // create summary for log file
 def summary = [:]
@@ -50,8 +50,14 @@ ${ summary.collect { k, v -> "  ${k.padRight(12)}: $v"}.join("\n") }
 
 
 /* ------------------------------------------------------------------------ *
- *   Pipeline
+ *   Pipeline - check input BAM
  * ------------------------------------------------------------------------ */
+
+// TODO - limit to bed region
+// TODO - count reads in input - total and unique??
+// TODO - input QC - are there enough reads to meet num_reads
+// TODO - if yes, input to downsample process 
+// TODO - run depthofcoverage too?
 
 process input_bam {
     /*
@@ -74,6 +80,10 @@ process input_bam {
     """
 }
 
+
+/* ------------------------------------------------------------------------ *
+ *   Pipeline - downsample BAM
+ * ------------------------------------------------------------------------ */
 
 // make channel for each target depth
 Channel
@@ -115,5 +125,5 @@ process downsample {
 }
 
 // TODO - index BAM??? - can add as flag to picard?
-
 // TODO - check num of reads afterwards to make sure it worked okay??
+// TODO - run depthofcoverage?
