@@ -130,7 +130,8 @@ process calc_percent_downsample {
     val(input_count) from input_check_ch
 
     output:
-    tuple val(depth), file("${depth}_percent.txt") into downsample_percent_ch
+    tuple val(depth),
+          file("${depth}_percent.txt") into downsample_percent_ch
 
     script:
     """
@@ -149,11 +150,14 @@ process downsample {
     tag "${depth}_${rep}"
 
     input:
-    tuple val(depth), file(percent_file) from downsample_percent_ch
+    tuple val(depth),
+          file(percent_file) from downsample_percent_ch
     each(rep) from reps_ch
 
     output:
-    tuple val(depth), val(rep), file("${depth}_${rep}.bam") into downsampled_bams_ch
+    tuple val(depth),
+          val(rep),
+          file("${depth}_${rep}.bam") into downsampled_bams_ch
     file("${depth}_${rep}.bai")
     file("${depth}_${rep}.downsample_metrics") into downsample_metrics_ch
 
@@ -178,12 +182,16 @@ process mark_dups {
     tag "${depth}_${rep}"
 
     input:
-    tuple val(depth), val(rep), file(bam) from downsampled_bams_ch
+    tuple val(depth), 
+          val(rep), 
+          file(bam) from downsampled_bams_ch
 
     output:
     file("${depth}_${rep}.rmdup.bam")
     file("${depth}_${rep}.rmdup.bai")
-    tuple val(depth), val(rep), file("${depth}_${rep}.rmdup_metrics") into rmdup_metrics_ch
+    tuple val(depth),
+          val(rep),
+          file("${depth}_${rep}.rmdup_metrics") into rmdup_metrics_ch
 
     script:
     """
@@ -204,11 +212,13 @@ process combine_metrics {
     tag "${depth}_${rep}"
 
     input:
-    tuple val(depth), val(rep), file(rmdup) from rmdup_metrics_ch
+    tuple val(depth),
+          val(rep),
+          file(rmdup) from rmdup_metrics_ch
     file(ds) from downsample_metrics_ch
 
     output:
-    file("metrics.csv") into combined_ch
+    file("metrics.csv") into combined_metrics_ch
 
     script:
     """
@@ -250,12 +260,13 @@ process combine_metrics {
 }
 
 
-// TODO - combine metrics files from all samples into one
+// TODO - add input BAM
+// combine metrics files from all samples into one
 process combine_samples {
     publishDir "${params.outdir}/downsample/", mode: "copy"
 
     input:
-    file(metrics_file) from combined_ch.collectFile()
+    file(metrics_file) from combined_metrics_ch.collectFile()
 
     output:
     file("combined_metrics.csv")
