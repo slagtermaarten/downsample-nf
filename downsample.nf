@@ -48,9 +48,27 @@ ${ summary.collect { k, v -> "  ${k.padRight(12)}: $v"}.join("\n") }
 ==============================================================================
 """
 
+/* ------------------------------------------------------------------------ *
+ *   Pipeline
+ * ------------------------------------------------------------------------ */
+
+// define initial channels
+// channel for each target depth
+Channel
+    .from( params.num_reads.split(',') )
+    .map{ "${it}reads" }
+    .set{ depths_ch }
+
+
+// channel for each repeat
+Channel
+    .from( 1..params.num_repeats.toInteger() )
+    .map{ "rep$it" }
+    .set{ reps_ch }
+
 
 /* ------------------------------------------------------------------------ *
- *   Pipeline - check input BAM
+ *   Check input BAM
  * ------------------------------------------------------------------------ */
 
 // TODO - limit to bed region
@@ -73,11 +91,10 @@ process get_input_read_count {
 }
 
 
-// are there enough reads to meet num_reads? - if yes, input to downsample process 
+// are there enough reads to meet num_reads?
 // TODO? - check inputs are integers
 process input_bam_qc {
     conda "env/downsample.yml"
-    publishDir "${params.outdir}", mode: "copy"
 
     input:
     val(input_count) from input_bam_read_count_ch
@@ -100,40 +117,20 @@ process input_bam_qc {
 
 
 /* ------------------------------------------------------------------------ *
- *   Pipeline - downsample BAM
+ *   Downsample BAM
  * ------------------------------------------------------------------------ */
-
-// make channel for each target depth
-Channel
-    .from( params.num_reads.split(',') )
-    .map{ "${it}reads" }
-    .set{ depths_ch }
-
-
-// make channel for each repeat
-Channel
-    .from( 1..params.num_repeats.toInteger() )
-    .map{ "rep$it" }
-    .set{ reps_ch }
-
-
-// combine channels
-depths_ch
-    .combine(reps_ch)
-    .set{combined_ch}
-
 
 // calculate percent to downsample to
 process calc_percent_downsample {
     conda "env/downsample.yml"
-    publishDir "${params.outdir}/downsample/$depth", mode: "copy"
+    tag "$depth"
 
     input:
-    tuple val(depth), val(rep) from combined_ch
+    val(depth) from depths_ch
     val(input_count) from input_check_ch
 
     output:
-    tuple val(depth), val(rep), file("${depth}_percent.txt") into downsample_percent_ch
+    tuple val(depth), file("${depth}_percent.txt") into downsample_percent_ch
 
     script:
     """
@@ -152,12 +149,13 @@ process downsample {
     tag "${depth}_${rep}"
 
     input:
-    tuple val(depth), val(rep), file(percent_file) from downsample_percent_ch
+    tuple val(depth), file(percent_file) from downsample_percent_ch
+    each(rep) from reps_ch
 
     output:
     tuple val(depth), val(rep), file("${depth}_${rep}.bam") into downsampled_bams_ch
     file("${depth}_${rep}.bai")
-    file("${depth}_${rep}.downsample_metrics")
+    file("${depth}_${rep}.downsample_metrics") into downsample_metrics_ch
 
     script:
     """
@@ -185,7 +183,7 @@ process mark_dups {
     output:
     file("${depth}_${rep}.rmdup.bam")
     file("${depth}_${rep}.rmdup.bai")
-    file("${depth}_${rep}.rmdup_metrics")
+    tuple val(depth), val(rep), file("${depth}_${rep}.rmdup_metrics") into rmdup_metrics_ch
 
     script:
     """
@@ -197,4 +195,91 @@ process mark_dups {
     """
 }
 
+
 // TODO - run depthofcoverage?
+
+
+// combine metrics files into one per sample
+process combine_metrics {
+    tag "${depth}_${rep}"
+
+    input:
+    tuple val(depth), val(rep), file(rmdup) from rmdup_metrics_ch
+    file(ds) from downsample_metrics_ch
+
+    output:
+    file("metrics.csv") into combined_ch
+
+    script:
+    """
+    # gather metics from downsampling metrics file
+    ds_total_reads=\$(head -n8 $ds | tail -n1 | cut -f1)
+    ds_pf_reads=\$(head -n8 $ds | tail -n1 | cut -f2)
+    ds_read_length=\$(head -n8 $ds | tail -n1 | cut -f3)
+    ds_total_bases=\$(head -n8 $ds | tail -n1 | cut -f4)
+    ds_pf_bases=\$(head -n8 $ds | tail -n1 | cut -f5)
+    
+    # gather metrics from rmdup metics file
+    rmdup_unpaired_reads_examined=\$(head -n8 $rmdup | tail -n1 | cut -f2)
+    rmdup_read_pairs_examined=\$(head -n8 $rmdup | tail -n1 | cut -f3)
+    rmdup_secondary_or_supplementary_reads=\$(head -n8 $rmdup | tail -n1 | cut -f4)
+    rmdup_unmapped_reads=\$(head -n8 $rmdup | tail -n1 | cut -f5)
+    rmdup_unpaired_read_duplicates=\$(head -n8 $rmdup | tail -n1 | cut -f6)
+    rmdup_read_pair_duplicates=\$(head -n8 $rmdup | tail -n1 | cut -f7)
+    rmdup_read_pair_optical_duplicates=\$(head -n8 $rmdup | tail -n1 | cut -f8)
+    rmdup_percent_duplication=\$(head -n8 $rmdup | tail -n1 | cut -f9)
+    rmdup_estimated_library_size=\$(head -n8 $rmdup | tail -n1 | cut -f10)
+
+    # print metrics to file
+    echo -e "${depth}_${rep},\\
+    \$ds_total_reads,\\
+    \$ds_pf_reads,\\
+    \$ds_read_length,\\
+    \$ds_total_bases,\\
+    \$ds_pf_bases,\\
+    \$rmdup_unpaired_reads_examined,\\
+    \$rmdup_read_pairs_examined,\\
+    \$rmdup_secondary_or_supplementary_reads,\\
+    \$rmdup_unmapped_reads,\\
+    \$rmdup_unpaired_read_duplicates,\\
+    \$rmdup_read_pair_duplicates,\\
+    \$rmdup_read_pair_optical_duplicates,\\
+    \$rmdup_percent_duplication,\\
+    \$rmdup_estimated_library_size" > metrics.csv
+    """
+}
+
+
+// TODO - combine metrics files from all samples into one
+process combine_samples {
+    publishDir "${params.outdir}/downsample/", mode: "copy"
+
+    input:
+    file(metrics_file) from combined_ch.collectFile()
+
+    output:
+    file("combined_metrics.csv")
+
+    script:
+    """
+    # make header
+    echo -e "sample,\\
+    ds_total_reads,\\
+    ds_pf_reads,\\
+    ds_read_length,\\
+    ds_total_bases,\\
+    ds_pf_bases,\\
+    rmdup_unpaired_reads_examined,\\
+    rmdup_read_pairs_examined,\\
+    rmdup_secondary_or_supplementary_reads,\\
+    rmdup_unmapped_reads,\\
+    rmdup_unpaired_read_duplicates,\\
+    rmdup_read_pair_duplicates,\\
+    rmdup_read_pair_optical_duplicates,\\
+    rmdup_percent_duplication,\\
+    rmdup_estimated_library_size" > combined_metrics.csv
+
+    # add sample
+    cat $metrics_file >> combined_metrics.csv
+    """
+}
