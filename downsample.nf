@@ -127,20 +127,19 @@ depths_ch
 process calc_percent_downsample {
     conda "env/downsample.yml"
     publishDir "${params.outdir}/downsample/$depth", mode: "copy"
-    tag "${depth}_${rep}"
 
     input:
     tuple val(depth), val(rep) from combined_ch
     val(input_count) from input_check_ch
 
     output:
-    tuple val(depth), val(rep), file("${depth}_${rep}_percent.txt") into downsample_percent_ch
+    tuple val(depth), val(rep), file("${depth}_percent.txt") into downsample_percent_ch
 
     script:
     """
     #!/usr/bin/env python
     target = int('$depth'.strip('reads')) / $input_count
-    with open('${depth}_${rep}_percent.txt', 'w') as f:
+    with open('${depth}_percent.txt', 'w') as f:
         f.write(str(target))
     """
 }
