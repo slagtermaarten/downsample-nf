@@ -64,11 +64,11 @@ process get_input_read_count {
     file(input_bam) from input
 
     output:
-    file("input_bam_read_count.txt") into input_bam_read_count_ch
+    env(READ_COUNT) into input_bam_read_count_ch
 
     script:
     """
-    samtools view -c -F 260 $input_bam > input_bam_read_count.txt
+    READ_COUNT=\$(samtools view -c -F 260 $input_bam)
     """
 }
 
@@ -83,7 +83,7 @@ process input_bam_qc {
     publishDir "${params.outdir}", mode: "copy"
 
     input:
-    file(input_count) from input_bam_read_count_ch_1
+    val(input_count) from input_bam_read_count_ch_1
 
     output:
     val(true) into input_check_ch
@@ -91,14 +91,9 @@ process input_bam_qc {
     script:
     """
     #!/usr/bin/env python
-    # get input read count
-    with open("$input_count") as f:
-        read_count = int(f.readline())
-    
-    # compare to num_reads, exit if requested num is larger than actual number
     for requested_count in $params.num_reads:
-        if int(requested_count) >= read_count:
-            raise ValueError(f'Requested number of reads ({requested_count}) is greater than the input ({read_count})')
+        if int(requested_count) >= $input_count:
+            raise ValueError(f'Requested number of reads ({requested_count}) is greater than the input ({$input_count})')
     """
 }
 
@@ -139,20 +134,18 @@ process calc_percent_downsample {
 
   input:
   set(depth, rep) from combined_ch_1
-  file(input_count) from input_bam_read_count_ch_2
+  val(input_count) from input_bam_read_count_ch_2
 
   output:
   set(depth, rep) into combined_ch_2
+  file("${depth}_${rep}_percent.txt") into downsample_percent_ch
 
   script:
   """
   #!/usr/bin/env python
-  # get input read count
-  with open("$input_count") as f:
-      read_count = int(f.readline())
-  
-  target = int('$depth'.strip('reads'))
-  PERCENT = (target / read_count)
+  target = int('$depth'.strip('reads')) / $input_count
+  with open('${depth}_${rep}_percent.txt', 'w') as f:
+      f.write(str(target))
   """
 }
 
@@ -166,6 +159,7 @@ process downsample {
     input:
     val(flag) from input_check_ch
     set(depth, rep) from combined_ch_2
+    file(percent_file) from downsample_percent_ch
 
     output:
     file("${depth}_${rep}.bam") into downsampled_bams_ch
@@ -175,10 +169,11 @@ process downsample {
 
     script:
     """
+    percent=\$(cat $percent_file)
     picard DownsampleSam \
       I=$params.input_bam \
       O=${depth}_${rep}.bam \
-      P=0.2 \
+      P=\$percent \
       M=${depth}_${rep}.downsample_metrics \
       RANDOM_SEED=null \
       CREATE_INDEX=true
