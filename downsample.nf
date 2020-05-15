@@ -32,7 +32,7 @@ if ( !params.num_reads )   { log.error "ERROR: num_reads is required"; exit 1 }
 //}
 
 // load file objects
-input = file("$params.input_bam", checkIfExists: true)
+input_bam = file("$params.input_bam", checkIfExists: true)
 
 // create summary for log file
 def summary = [:]
@@ -61,19 +61,16 @@ process get_input_read_count {
     conda "env/downsample.yml"
 
     input:
-    file(input_bam) from input
+    file(bam) from input_bam
 
     output:
     env(READ_COUNT) into input_bam_read_count_ch
 
     script:
     """
-    READ_COUNT=\$(samtools view -c -F 260 $input_bam)
+    READ_COUNT=\$(samtools view -c -F 260 $bam)
     """
 }
-
-input_bam_read_count_ch
-  .into{ input_bam_read_count_ch_1; input_bam_read_count_ch_2 }
 
 
 // are there enough reads to meet num_reads? - if yes, input to downsample process 
@@ -83,10 +80,10 @@ process input_bam_qc {
     publishDir "${params.outdir}", mode: "copy"
 
     input:
-    val(input_count) from input_bam_read_count_ch_1
+    val(input_count) from input_bam_read_count_ch
 
     output:
-    val(true) into input_check_ch
+    val(input_count) into input_check_ch
 
     script:
     """
@@ -108,45 +105,44 @@ process input_bam_qc {
 
 // make channel for each target depth
 Channel
-  .from( params.num_reads.split(',') )
-  .map{ "${it}reads" }
-  .set{ depths_ch }
+    .from( params.num_reads.split(',') )
+    .map{ "${it}reads" }
+    .set{ depths_ch }
 
 
 // make channel for each repeat
 Channel
-  .from( 1..params.num_repeats.toInteger() )
-  .map{ "rep$it" }
-  .set{ reps_ch }
+    .from( 1..params.num_repeats.toInteger() )
+    .map{ "rep$it" }
+    .set{ reps_ch }
 
 
 // combine channels
 depths_ch
-  .combine(reps_ch)
-  .set{combined_ch_1}
+    .combine(reps_ch)
+    .set{combined_ch}
 
 
 // calculate percent to downsample to
 process calc_percent_downsample {
-  conda "env/downsample.yml"
-  publishDir "${params.outdir}/downsample/$depth", mode: "copy"
-  tag "${depth}_${rep}"
+    conda "env/downsample.yml"
+    publishDir "${params.outdir}/downsample/$depth", mode: "copy"
+    tag "${depth}_${rep}"
 
-  input:
-  set(depth, rep) from combined_ch_1
-  val(input_count) from input_bam_read_count_ch_2
+    input:
+    tuple val(depth), val(rep) from combined_ch
+    val(input_count) from input_check_ch
 
-  output:
-  set(depth, rep) into combined_ch_2
-  file("${depth}_${rep}_percent.txt") into downsample_percent_ch
+    output:
+    tuple val(depth), val(rep), file("${depth}_${rep}_percent.txt") into downsample_percent_ch
 
-  script:
-  """
-  #!/usr/bin/env python
-  target = int('$depth'.strip('reads')) / $input_count
-  with open('${depth}_${rep}_percent.txt', 'w') as f:
-      f.write(str(target))
-  """
+    script:
+    """
+    #!/usr/bin/env python
+    target = int('$depth'.strip('reads')) / $input_count
+    with open('${depth}_${rep}_percent.txt', 'w') as f:
+        f.write(str(target))
+    """
 }
 
 
@@ -157,76 +153,49 @@ process downsample {
     tag "${depth}_${rep}"
 
     input:
-    val(flag) from input_check_ch
-    set(depth, rep) from combined_ch_2
-    file(percent_file) from downsample_percent_ch
+    tuple val(depth), val(rep), file(percent_file) from downsample_percent_ch
 
     output:
-    file("${depth}_${rep}.bam") into downsampled_bams_ch
+    tuple val(depth), val(rep), file("${depth}_${rep}.bam") into downsampled_bams_ch
     file("${depth}_${rep}.bai")
     file("${depth}_${rep}.downsample_metrics")
-    set(depth, rep) into combined_ch_3
 
     script:
     """
     percent=\$(cat $percent_file)
     picard DownsampleSam \
-      I=$params.input_bam \
-      O=${depth}_${rep}.bam \
-      P=\$percent \
-      M=${depth}_${rep}.downsample_metrics \
-      RANDOM_SEED=null \
-      CREATE_INDEX=true
+        I=$params.input_bam \
+        O=${depth}_${rep}.bam \
+        M=${depth}_${rep}.downsample_metrics \
+        CREATE_INDEX=true \
+        RANDOM_SEED=null \
+        P=\$percent
     """
 }
 
 
-// TODO - check num of reads afterwards to make sure it worked okay??
-//   - this duplcates metrics file from above - not needed?
-/*
-process output_qc {
-  conda "env/downsample.yml"
-  publishDir "${params.outdir}/downsample/$depth", mode: "copy"
-  tag "${depth}_${rep}"
-
-  input:
-  file(bam) from downsampled_bams_ch
-  set depth, rep from combined_ch_2
-
-  output:
-  file("${depth}_${rep}.read_count")
-
-  script:
-  """
-  samtools view -c $bam > ${depth}_${rep}.read_count
-  """
-}
-*/
-
-
 // calculate total reads with duplicates removed
 process mark_dups {
-  conda "env/downsample.yml"
-  publishDir "${params.outdir}/downsample/$depth", mode: "copy"
-  tag "${depth}_${rep}"
+    conda "env/downsample.yml"
+    publishDir "${params.outdir}/downsample/$depth", mode: "copy"
+    tag "${depth}_${rep}"
 
-  input:
-  file(bam) from downsampled_bams_ch
-  set(depth, rep) from combined_ch_3
+    input:
+    tuple val(depth), val(rep), file(bam) from downsampled_bams_ch
 
-  output:
-  file("${depth}_${rep}.rmdup.bam")
-  file("${depth}_${rep}.rmdup.bai")
-  file("${depth}_${rep}.rmdup_metrics")
+    output:
+    file("${depth}_${rep}.rmdup.bam")
+    file("${depth}_${rep}.rmdup.bai")
+    file("${depth}_${rep}.rmdup_metrics")
 
-  script:
-  """
-  picard MarkDuplicates \
-    I=$bam \
-    O=${depth}_${rep}.rmdup.bam \
-    M=${depth}_${rep}.rmdup_metrics \
-    CREATE_INDEX=true
-  """
+    script:
+    """
+    picard MarkDuplicates \
+        I=$bam \
+        O=${depth}_${rep}.rmdup.bam \
+        M=${depth}_${rep}.rmdup_metrics \
+        CREATE_INDEX=true
+    """
 }
 
 // TODO - run depthofcoverage?
