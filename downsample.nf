@@ -72,6 +72,9 @@ process get_input_read_count {
     """
 }
 
+input_bam_read_count_ch
+  .into{ input_bam_read_count_ch_1; input_bam_read_count_ch_2 }
+
 
 // are there enough reads to meet num_reads? - if yes, input to downsample process 
 // TODO? - check inputs are integers
@@ -80,7 +83,7 @@ process input_bam_qc {
     publishDir "${params.outdir}", mode: "copy"
 
     input:
-    file(input_count) from input_bam_read_count_ch
+    file(input_count) from input_bam_read_count_ch_1
 
     output:
     val(true) into input_check_ch
@@ -128,7 +131,31 @@ depths_ch
   .set{combined_ch_1}
 
 
-// TODO - calculate percent to downsample to
+// calculate percent to downsample to
+process calc_percent_downsample {
+  conda "env/downsample.yml"
+  publishDir "${params.outdir}/downsample/$depth", mode: "copy"
+  tag "${depth}_${rep}"
+
+  input:
+  set(depth, rep) from combined_ch_1
+  file(input_count) from input_bam_read_count_ch_2
+
+  output:
+  set(depth, rep) into combined_ch_2
+
+  script:
+  """
+  #!/usr/bin/env python
+  # get input read count
+  with open("$input_count") as f:
+      read_count = int(f.readline())
+  
+  target = int('$depth'.strip('reads'))
+  PERCENT = (target / read_count)
+  """
+}
+
 
 // downsample BAM
 process downsample {
@@ -138,13 +165,13 @@ process downsample {
 
     input:
     val(flag) from input_check_ch
-    set(depth, rep) from combined_ch_1
+    set(depth, rep) from combined_ch_2
 
     output:
     file("${depth}_${rep}.bam") into downsampled_bams_ch
     file("${depth}_${rep}.bai")
     file("${depth}_${rep}.downsample_metrics")
-    set(depth, rep) into combined_ch_2
+    set(depth, rep) into combined_ch_3
 
     script:
     """
@@ -190,7 +217,7 @@ process mark_dups {
 
   input:
   file(bam) from downsampled_bams_ch
-  set(depth, rep) from combined_ch_2
+  set(depth, rep) from combined_ch_3
 
   output:
   file("${depth}_${rep}.rmdup.bam")
