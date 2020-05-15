@@ -125,7 +125,7 @@ Channel
 // combine channels
 depths_ch
   .combine(reps_ch)
-  .into{combined_ch; combined_ch_2}
+  .set{combined_ch_1}
 
 
 // TODO - calculate percent to downsample to
@@ -137,13 +137,14 @@ process downsample {
     tag "${depth}_${rep}"
 
     input:
-    val flag from input_check_ch
-    set depth, rep from combined_ch
+    val(flag) from input_check_ch
+    set(depth, rep) from combined_ch_1
 
     output:
     file("${depth}_${rep}.bam") into downsampled_bams_ch
     file("${depth}_${rep}.bai")
     file("${depth}_${rep}.downsample_metrics")
+    set(depth, rep) into combined_ch_2
 
     script:
     """
@@ -160,6 +161,7 @@ process downsample {
 
 // TODO - check num of reads afterwards to make sure it worked okay??
 //   - this duplcates metrics file from above - not needed?
+/*
 process output_qc {
   conda "env/downsample.yml"
   publishDir "${params.outdir}/downsample/$depth", mode: "copy"
@@ -177,7 +179,32 @@ process output_qc {
   samtools view -c $bam > ${depth}_${rep}.read_count
   """
 }
+*/
 
+
+// calculate total reads with duplicates removed
+process mark_dups {
+  conda "env/downsample.yml"
+  publishDir "${params.outdir}/downsample/$depth", mode: "copy"
+  tag "${depth}_${rep}"
+
+  input:
+  file(bam) from downsampled_bams_ch
+  set(depth, rep) from combined_ch_2
+
+  output:
+  file("${depth}_${rep}.rmdup.bam")
+  file("${depth}_${rep}.rmdup.bai")
+  file("${depth}_${rep}.rmdup_metrics")
+
+  script:
+  """
+  picard MarkDuplicates \
+    I=$bam \
+    O=${depth}_${rep}.rmdup.bam \
+    M=${depth}_${rep}.rmdup_metrics \
+    CREATE_INDEX=true
+  """
+}
 
 // TODO - run depthofcoverage?
-// TODO - total reads-duplicates - need to mark duplicates first
