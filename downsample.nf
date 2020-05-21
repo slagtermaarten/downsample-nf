@@ -84,7 +84,7 @@ process get_input_read_count {
     output:
     env(READ_COUNT) into input_bam_read_count_ch
 
-    script:
+    script: // TODO - remove -f flag????
     """
     READ_COUNT=\$(samtools view -c -F 260 $bam)
     """
@@ -115,6 +115,7 @@ process input_bam_qc {
 // TODO - run depthofcoverage too?
 // TODO - total reads-duplicates - need to mark duplicates first
 
+// TODO - fix path to conda env - add basedir?
 
 /* ------------------------------------------------------------------------ *
  *   Downsample BAM
@@ -157,9 +158,9 @@ process downsample {
     output:
     tuple val(depth),
           val(rep),
-          file("${depth}_${rep}.bam") into downsampled_bams_ch
+          file("${depth}_${rep}.bam"), 
+          file("${depth}_${rep}.downsample_metrics") into downsampled_bams_ch
     file("${depth}_${rep}.bai")
-    file("${depth}_${rep}.downsample_metrics") into downsample_metrics_ch
 
     script:
     """
@@ -184,14 +185,16 @@ process mark_dups {
     input:
     tuple val(depth), 
           val(rep), 
-          file(bam) from downsampled_bams_ch
+          file(bam),
+          file(bam_metrics) from downsampled_bams_ch
 
     output:
     file("${depth}_${rep}.rmdup.bam")
     file("${depth}_${rep}.rmdup.bai")
     tuple val(depth),
           val(rep),
-          file("${depth}_${rep}.rmdup_metrics") into rmdup_metrics_ch
+          file("${depth}_${rep}.rmdup_metrics"),
+          file(bam_metrics) into rmdup_metrics_ch
 
     script:
     """
@@ -210,15 +213,16 @@ process mark_dups {
 // combine metrics files into one per sample
 process combine_metrics {
     tag "${depth}_${rep}"
+    publishDir "${params.outdir}/downsample/$depth", mode: "copy"
 
     input:
     tuple val(depth),
           val(rep),
-          file(rmdup) from rmdup_metrics_ch
-    file(ds) from downsample_metrics_ch
+          file(rmdup),
+          file(ds) from rmdup_metrics_ch
 
     output:
-    file("metrics.csv") into combined_metrics_ch
+    file("${depth}_${rep}_metrics.csv") into combined_metrics_ch
 
     script:
     """
@@ -255,7 +259,7 @@ process combine_metrics {
     \$rmdup_read_pair_duplicates,\\
     \$rmdup_read_pair_optical_duplicates,\\
     \$rmdup_percent_duplication,\\
-    \$rmdup_estimated_library_size" > metrics.csv
+    \$rmdup_estimated_library_size" > ${depth}_${rep}_metrics.csv
     """
 }
 
@@ -266,7 +270,7 @@ process combine_samples {
     publishDir "${params.outdir}/downsample/", mode: "copy"
 
     input:
-    file(metrics_file) from combined_metrics_ch.collectFile()
+    file(metrics_file) from combined_metrics_ch.collect()
 
     output:
     file("combined_metrics.csv")
