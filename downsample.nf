@@ -19,11 +19,29 @@ params.outdir      = false
 params.input_bam   = false
 params.num_repeats = false
 params.num_reads   = false
+params.range_reads = false
 
 // check for required input data
 if ( !params.input_bam )   { log.error "ERROR: input_bam is required"; exit 1 }
 if ( !params.num_repeats ) { log.error "ERROR: num_repeats is required"; exit 1 }
-if ( !params.num_reads )   { log.error "ERROR: num_reads is required"; exit 1 }
+
+// make sure exactly one of num_reads and range_reads have been inputted
+if ( !params.range_reads && !params.num_reads ) {
+    log.error "ERROR: one of num_reads or range_reads is required"; exit 1
+
+} else if ( params.range_reads && params.num_reads ) {
+    log.error "ERROR: only one of num_reads or range_reads is required, not both"; exit 1
+
+// parse input
+} else if ( params.range_reads && !params.num_reads ) { 
+    range_min  = params.range_reads.split(',')[0].toInteger()
+    range_max  = params.range_reads.split(',')[1].toInteger()
+    range_step = params.range_reads.split(',')[2].toInteger()
+    target_reads = (range_min..range_max).step(range_step)
+    
+} else if ( !params.range_reads && params.num_reads ) {
+    target_reads = params.num_reads.split(',')
+}
 
 // TODO - check optional input data
 //if ( !params.outdir )   { 
@@ -37,7 +55,7 @@ input_bam = file("$params.input_bam", checkIfExists: true)
 // create summary for log file
 def summary = [:]
 summary["Input BAM"]   = params.input_bam
-summary["Reads"]       = params.num_reads
+summary["Reads"]       = target_reads.join(',')
 summary["Num repeats"] = params.num_repeats
 summary["Output dir"]  = params.outdir
 
@@ -55,7 +73,7 @@ ${ summary.collect { k, v -> "  ${k.padRight(12)}: $v"}.join("\n") }
 // define initial channels
 // channel for each target depth
 Channel
-    .from( params.num_reads.split(',') )
+    .from( target_reads )
     .map{ "${it}reads" }
     .set{ depths_ch }
 
@@ -105,7 +123,7 @@ process input_bam_qc {
     script:
     """
     #!/usr/bin/env python
-    for requested_count in $params.num_reads:
+    for requested_count in $target_reads:
         if int(requested_count) >= $input_count:
             raise ValueError(f'Requested number of reads ({requested_count}) is greater than the input ({$input_count})')
     """
