@@ -84,9 +84,9 @@ process get_input_read_count {
     output:
     env(READ_COUNT) into input_bam_read_count_ch
 
-    script: // TODO - remove -f flag????
+    script:
     """
-    READ_COUNT=\$(samtools view -c -F 260 $bam)
+    READ_COUNT=\$(samtools view -c $bam)
     """
 }
 
