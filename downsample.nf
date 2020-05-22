@@ -76,7 +76,7 @@ Channel
 
 // count total reads in input
 process get_input_read_count {
-    conda "env/downsample.yml"
+    conda "$baseDir/env/downsample.yml"
 
     input:
     file(bam) from input_bam
@@ -94,7 +94,7 @@ process get_input_read_count {
 // are there enough reads to meet num_reads?
 // TODO? - check inputs are integers
 process input_bam_qc {
-    conda "env/downsample.yml"
+    conda "$baseDir/env/downsample.yml"
 
     input:
     val(input_count) from input_bam_read_count_ch
@@ -115,15 +115,13 @@ process input_bam_qc {
 // TODO - run depthofcoverage too?
 // TODO - total reads-duplicates - need to mark duplicates first
 
-// TODO - fix path to conda env - add basedir?
-
 /* ------------------------------------------------------------------------ *
  *   Downsample BAM
  * ------------------------------------------------------------------------ */
 
 // calculate percent to downsample to
 process calc_percent_downsample {
-    conda "env/downsample.yml"
+    conda "$baseDir/env/downsample.yml"
     tag "$depth"
 
     input:
@@ -146,7 +144,7 @@ process calc_percent_downsample {
 
 // downsample BAM
 process downsample {
-    conda "env/downsample.yml"
+    conda "$baseDir/env/downsample.yml"
     publishDir "${params.outdir}/downsample/$depth", mode: "copy"
     tag "${depth}_${rep}"
 
@@ -178,7 +176,7 @@ process downsample {
 
 // calculate total reads with duplicates removed
 process mark_dups {
-    conda "env/downsample.yml"
+    conda "$baseDir/env/downsample.yml"
     publishDir "${params.outdir}/downsample/$depth", mode: "copy"
     tag "${depth}_${rep}"
 
