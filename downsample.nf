@@ -246,6 +246,8 @@ process combine_metrics {
 
     # print metrics to file
     echo -e "${depth}_${rep},\\
+    \$(echo ${depth} | tr -cd '0-9'),\\
+    \$(echo ${rep} | tr -cd '0-9'),\\
     \$ds_total_reads,\\
     \$ds_pf_reads,\\
     \$ds_read_length,\\
@@ -279,6 +281,8 @@ process combine_samples {
     """
     # make header
     echo -e "sample,\\
+    target_reads,\\
+    rep,\\
     ds_total_reads,\\
     ds_pf_reads,\\
     ds_read_length,\\
