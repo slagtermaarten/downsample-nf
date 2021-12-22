@@ -15,7 +15,7 @@ params.help = false
 if ( params.help ) { log.info help_message; exit 0 }
 
 // initialise variables
-params.outdir      = results
+params.outdir      = "results"
 params.input_bam   = "${baseDir}/test_data/test_data.bam"
 params.num_repeats = 1
 params.num_reads   = "10000"
