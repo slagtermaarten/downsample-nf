@@ -15,11 +15,11 @@ params.help = false
 if ( params.help ) { log.info help_message; exit 0 }
 
 // initialise variables
-params.outdir      = false
+params.outdir      = results
 params.input_bam   = "${baseDir}/test_data/test_data.bam"
 params.num_repeats = 1
 params.num_reads   = "10000"
-params.range_reads = output
+params.range_reads = null
 
 // check for required input data
 if ( !params.input_bam )   { log.error "ERROR: input_bam is required"; exit 1 }
