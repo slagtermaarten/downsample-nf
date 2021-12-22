@@ -16,10 +16,10 @@ if ( params.help ) { log.info help_message; exit 0 }
 
 // initialise variables
 params.outdir      = false
-params.input_bam   = false
-params.num_repeats = false
-params.num_reads   = false
-params.range_reads = false
+params.input_bam   = "${baseDir}/test_data/test_data.bam"
+params.num_repeats = 1
+params.num_reads   = "10000"
+params.range_reads = output
 
 // check for required input data
 if ( !params.input_bam )   { log.error "ERROR: input_bam is required"; exit 1 }
@@ -40,7 +40,11 @@ if ( !params.range_reads && !params.num_reads ) {
     target_reads = (range_min..range_max).step(range_step)
     
 } else if ( !params.range_reads && params.num_reads ) {
-    target_reads = params.num_reads.split(',')
+    if ( params.num_reads ==~ /,/ ) {
+        target_reads = params.num_reads.split(',')
+    } else {
+        target_reads = [params.num_reads]
+    }
 }
 
 // TODO - check optional input data
@@ -94,7 +98,7 @@ Channel
 
 // count total reads in input
 process get_input_read_count {
-    conda "$baseDir/env/downsample.yml"
+    conda "$baseDir/env/downsample_us.yml"
 
     input:
     file(bam) from input_bam
@@ -112,7 +116,7 @@ process get_input_read_count {
 // are there enough reads to meet num_reads?
 // TODO? - check inputs are integers
 process input_bam_qc {
-    conda "$baseDir/env/downsample.yml"
+    conda "$baseDir/env/downsample_us.yml"
 
     input:
     val(input_count) from input_bam_read_count_ch
@@ -139,7 +143,7 @@ process input_bam_qc {
 
 // calculate percent to downsample to
 process calc_percent_downsample {
-    conda "$baseDir/env/downsample.yml"
+    conda "$baseDir/env/downsample_us.yml"
     tag "$depth"
 
     input:
@@ -162,7 +166,7 @@ process calc_percent_downsample {
 
 // downsample BAM
 process downsample {
-    conda "$baseDir/env/downsample.yml"
+    conda "$baseDir/env/downsample_us.yml"
     publishDir "${params.outdir}/downsample/$depth", mode: "copy"
     tag "${depth}_${rep}"
 
@@ -194,7 +198,7 @@ process downsample {
 
 // calculate total reads with duplicates removed
 process mark_dups {
-    conda "$baseDir/env/downsample.yml"
+    conda "$baseDir/env/downsample_us.yml"
     publishDir "${params.outdir}/downsample/$depth", mode: "copy"
     tag "${depth}_${rep}"
 

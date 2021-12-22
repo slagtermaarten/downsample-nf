@@ -1,0 +1,5 @@
+name: downsample
+dependencies:
+- python=3
+- bioconda::picard
+- bioconda::samtools
